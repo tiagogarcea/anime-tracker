@@ -72,7 +72,7 @@ def plotly_layout(fig, title="", xaxis_title="", yaxis_title=""):
     )
     return fig
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)
 def load_data():
     raw = pd.read_csv(SHEET_URL, header=None)
     header_idx = 0
