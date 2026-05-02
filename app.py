@@ -187,14 +187,13 @@
         # Episódios: total com rewatch + subtítulo em vermelho
         eps_total   = int(df_raw['_eps_total'].sum())
         eps_rewatch = int(df_raw['_eps_rewatch'].sum())
-
         with k4:
             st.metric("EPISÓDIOS TOTAIS", f"{eps_total:,}")
             st.markdown(
                 f"<div style='font-size:0.82rem;color:#e50914;margin-top:-12px;"
                 f"padding-left:4px;font-weight:600;'>🔄 {eps_rewatch:,} eps de rewatch</div>",
                 unsafe_allow_html=True
-    )
+            )
 
         # ══════════════════════════════════════════════════════════════════════════
         # SIDEBAR
