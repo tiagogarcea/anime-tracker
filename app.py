@@ -172,7 +172,7 @@ try:
     st.markdown("""
         <div style='margin-bottom:20px;'>
             <h1 style='margin:0;'>🎬 ANIME <span style='color:#e50914;'>TRACKER</span></h1>
-            <p style='margin:0;color:#888;'>Sua coleção em modo streaming</p>
+            <p style='margin:0;color:#888;'>Versão 2.3.1</p>
         </div>
     """, unsafe_allow_html=True)
 
