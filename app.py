@@ -188,12 +188,21 @@
         eps_total   = int(df_raw['_eps_total'].sum())
         eps_rewatch = int(df_raw['_eps_rewatch'].sum())
         with k4:
-            st.metric("EPISÓDIOS TOTAIS", f"{eps_total:,}")
-            st.markdown(
-                f"<div style='font-size:0.82rem;color:#e50914;margin-top:-12px;"
-                f"padding-left:4px;font-weight:600;'>🔄 {eps_rewatch:,} eps de rewatch</div>",
-                unsafe_allow_html=True
-            )
+            st.markdown(f"""
+                <div data-testid="stMetric" style="background:#16161a;border:1px solid #2d2d33;
+                    border-radius:12px;padding:20px;box-shadow:0 4px 10px rgba(0,0,0,.5);">
+                    <div style="font-size:0.75rem;color:#a1a1aa;font-weight:600;
+                                text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">
+                        EPISÓDIOS TOTAIS
+                    </div>
+                    <div style="font-size:2rem;font-weight:700;color:#fff;line-height:1.1;">
+                        {eps_total:,}
+                    </div>
+                    <div style="font-size:0.82rem;color:#e50914;margin-top:4px;font-weight:600;">
+                        &#128260; {eps_rewatch:,} eps de rewatch
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
         # ══════════════════════════════════════════════════════════════════════════
         # SIDEBAR
