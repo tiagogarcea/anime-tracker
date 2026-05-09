@@ -490,12 +490,12 @@ try:
 
         # ✅ #26: Sugestão aleatória ponderada ─────────────────────────────────
         with st.expander("🎲 Sugestão do Dia", expanded=False):
-            col_btn, col_info = st.columns([1, 3])
-            with col_btn:
-                if st.button("🎯 Me indica um anime!", use_container_width=True):
-                    st.session_state["sugestao"] = sortear_anime(df)
+            if st.button("🎯 Me indica um anime!", use_container_width=False):
+                st.session_state["sugestao"] = sortear_anime(df)
 
             sug = st.session_state.get("sugestao")
+
+            # Monta HTML do card de sugestão (mesmo estilo dos cards da coleção)
             if sug is not None:
                 img_url = ""
                 for col in ['Link', 'Imagem']:
@@ -506,35 +506,119 @@ try:
                 if not img_url:
                     img_url = PLACEHOLDER
 
-                sug_nome    = safe_str(sug.get('Nome', ''), 'Sem título')
-                sug_score   = sug.get('Score', 0)
-                sug_studio  = safe_str(sug.get('Studio', ''), '—')
-                sug_eps     = int(sug.get('Episodes', 0))
-                sug_temp    = safe_str(sug.get('Temporada', ''), '—')
-                sug_is_fav  = "FAV" in str(sug.get('Favorite', '')).upper()
-                sug_mal     = safe_str(sug.get('URL_Pagina', ''))
-                sug_cry     = safe_str(sug.get('Link do Anime', ''))
+                sug_nome   = html.escape(safe_str(sug.get('Nome', ''), 'Sem título'))
+                sug_score  = sug.get('Score', 0)
+                sug_studio = html.escape(safe_str(sug.get('Studio', ''), '—'))
+                sug_eps    = int(sug.get('Episodes', 0))
+                sug_temp   = html.escape(safe_str(sug.get('Temporada', ''), '—'))
+                sug_genero = html.escape(safe_str(sug.get('Gênero', sug.get('Genero', '')), '—'))
+                sug_tema   = html.escape(safe_str(sug.get('Tema', ''), '—'))
+                sug_visto  = html.escape(safe_str(sug.get('Last seen', ''), '—'))
+                sug_coment = html.escape(safe_str(sug.get('Coments', sug.get('Comments', '')), ''))
+                sug_is_fav = "FAV" in str(sug.get('Favorite', '')).upper()
+                sug_rw     = int(sug.get('Rewatched', 0))
+                sug_mal    = safe_str(sug.get('URL_Pagina', ''))
+                sug_cry    = safe_str(sug.get('Link do Anime', ''))
 
-                fav_tag = " ❤️ FAV" if sug_is_fav else ""
+                fav_badge   = "<span class='d-badge fav-badge'>&#10084; FAV</span>" if sug_is_fav else ""
+                rw_badge    = f"<span class='d-badge rw-badge'>&#128260; {sug_rw}x</span>" if sug_rw > 0 else ""
+                badge_fav   = '<div class="badge-fav">&#10084;</div>' if sug_is_fav else ""
+                rw_offset   = "left:42px;" if sug_is_fav else "left:10px;"
+                badge_rw    = f'<div class="badge-rewatch" style="{rw_offset}">&#128260; {sug_rw}</div>' if sug_rw > 0 else ""
+                com_html    = f'<p class="detail-review">"{sug_coment}"</p>' if sug_coment else ""
+                mal_btn     = f'<a href="{sug_mal}" target="_blank" class="ext-btn btn-mal">MAL</a>' if sug_mal.startswith("http") else ""
+                cry_btn     = f'<a href="{sug_cry}" target="_blank" class="ext-btn btn-crunchy">Crunchyroll</a>' if sug_cry.startswith("http") else ""
+                btns        = f'<div class="detail-buttons">{mal_btn}{cry_btn}</div>' if (mal_btn or cry_btn) else ""
 
-                c_img, c_det = st.columns([1, 3])
-                with c_img:
-                    st.image(img_url, width=140)
-                with c_det:
-                    st.markdown(
-                        f"<div style='font-size:1.05rem;font-weight:700;color:#fff;margin-bottom:4px;'>"
-                        f"{html.escape(sug_nome)}{fav_tag}</div>"
-                        f"<div style='font-size:.82rem;color:#ffcc00;margin-bottom:6px;'>⭐ {sug_score}</div>"
-                        f"<div style='font-size:.8rem;color:#a1a1aa;'>"
-                        f"🏢 {html.escape(sug_studio)} &bull; 📺 {sug_eps} eps &bull; 🗓️ {html.escape(sug_temp)}"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                    btn_cols = st.columns(2)
-                    if sug_mal.startswith("http"):
-                        btn_cols[0].link_button("MyAnimeList", sug_mal)
-                    if sug_cry.startswith("http"):
-                        btn_cols[1].link_button("Crunchyroll", sug_cry)
+                sug_html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
+.sug-card{{
+    position:relative;background:#16161a;border-radius:14px;
+    border:1px solid #e50914;box-shadow:0 0 24px rgba(229,9,20,0.18);
+    display:flex;flex-direction:row;overflow:hidden;width:100%;max-width:680px;
+}}
+.sug-poster{{
+    position:relative;flex-shrink:0;width:160px;
+}}
+.sug-poster img{{
+    width:160px;height:240px;object-fit:cover;display:block;
+    border-radius:14px 0 0 14px;
+}}
+.badge-score{{
+    position:absolute;top:10px;right:10px;background:rgba(0,0,0,.78);
+    padding:4px 9px;border-radius:6px;color:#ffcc00;font-weight:bold;font-size:.82em;z-index:5;
+}}
+.badge-fav{{
+    position:absolute;top:10px;left:10px;background:#e50914;color:white;
+    width:26px;height:26px;border-radius:50%;display:flex;justify-content:center;
+    align-items:center;font-size:.75em;z-index:5;
+}}
+.badge-rewatch{{
+    position:absolute;top:10px;background:rgba(255,255,255,.2);backdrop-filter:blur(5px);
+    padding:2px 8px;border-radius:12px;font-size:.72em;z-index:5;color:#fff;
+}}
+.sug-body{{
+    display:flex;flex-direction:column;gap:10px;padding:18px 18px 14px;flex:1;min-width:0;
+}}
+.sug-title{{
+    font-size:1rem;font-weight:700;color:#fff;line-height:1.35;
+}}
+.sug-badges{{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}}
+.d-badge{{padding:3px 10px;border-radius:10px;font-size:.72em;font-weight:bold;}}
+.score-badge{{background:rgba(255,204,0,.15);color:#ffcc00;border:1px solid #ffcc00;}}
+.fav-badge{{background:rgba(229,9,20,.2);color:#e50914;border:1px solid #e50914;}}
+.rw-badge{{background:rgba(255,255,255,.1);color:#ccc;border:1px solid #555;}}
+.sug-meta{{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:#a1a1aa;}}
+.sug-meta b{{color:#ddd;}}
+.detail-review{{
+    font-size:.74rem;color:#888;font-style:italic;
+    border-left:2px solid #e50914;padding-left:8px;line-height:1.4;
+}}
+.detail-buttons{{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:2px;}}
+.ext-btn{{
+    display:inline-block;padding:6px 16px;border-radius:8px;font-size:.76rem;
+    font-weight:bold;text-decoration:none;text-align:center;
+    transition:opacity .15s,transform .15s;
+}}
+.ext-btn:hover{{opacity:.85;transform:translateY(-1px);}}
+.btn-mal{{background:#2e51a2;color:#fff;border:1px solid #3d65c4;}}
+.btn-crunchy{{background:#f47521;color:#fff;border:1px solid #ff8c3a;}}
+</style></head><body>
+<div class="sug-card">
+  <div class="sug-poster">
+    {badge_fav}{badge_rw}
+    <div class="badge-score">&#9733; {sug_score}</div>
+    <img src="{img_url}" onerror="this.src='{PLACEHOLDER}'">
+  </div>
+  <div class="sug-body">
+    <div class="sug-title">{sug_nome}</div>
+    <div class="sug-badges">
+      <span class="d-badge score-badge">&#9733; {sug_score}</span>
+      {fav_badge}{rw_badge}
+    </div>
+    <div class="sug-meta">
+      <span><b>Estúdio:</b> {sug_studio}</span>
+      <span><b>Gênero:</b> {sug_genero}</span>
+      <span><b>Tema:</b> {sug_tema}</span>
+      <span><b>Temporada:</b> {sug_temp}</span>
+      <span><b>Eps:</b> {sug_eps}</span>
+      <span><b>Visto em:</b> {sug_visto}</span>
+    </div>
+    {com_html}
+    {btns}
+  </div>
+</div>
+</body></html>"""
+
+                components.html(sug_html, height=268, scrolling=False)
+            else:
+                st.markdown(
+                    "<div style='font-size:.82rem;color:#a1a1aa;padding:6px 0;'>"
+                    "Clique no botão acima para sortear um anime da sua coleção filtrada.</div>",
+                    unsafe_allow_html=True,
+                )
 
         st.markdown("---")
 
