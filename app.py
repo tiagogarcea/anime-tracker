@@ -538,13 +538,14 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
     position:relative;background:#16161a;border-radius:14px;
     border:1px solid #e50914;box-shadow:0 0 24px rgba(229,9,20,0.18);
     display:flex;flex-direction:row;overflow:hidden;width:100%;
+    align-items:stretch;
 }}
 .sug-poster{{
-    position:relative;flex-shrink:0;width:160px;
+    position:relative;flex-shrink:0;width:160px;display:flex;
 }}
 .sug-poster img{{
-    width:160px;height:100%;min-height:220px;object-fit:cover;display:block;
-    border-radius:14px 0 0 14px;
+    width:160px;height:100%;object-fit:cover;display:block;
+    border-radius:14px 0 0 14px;flex:1;
 }}
 .badge-score{{
     position:absolute;top:10px;right:10px;background:rgba(0,0,0,.78);
@@ -612,9 +613,12 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
 </div>
 </body></html>"""
 
-                # Altura dinâmica: base + extras por conteúdo adicional
-                extra_h = (28 if sug_is_fav or sug_rw > 0 else 0) + (36 if sug_coment else 0)
-                components.html(sug_html, height=270 + extra_h, scrolling=False)
+                # Altura precisa: padding (32) + título (48) + badges (28 se fav/rw) +
+                # meta 6 linhas (144) + comentário (44 se houver) + botões (44) + margem (16)
+                h = 32 + 48 + 144 + 44 + 16
+                if sug_is_fav or sug_rw > 0: h += 28
+                if sug_coment: h += 44
+                components.html(sug_html, height=h, scrolling=False)
             else:
                 st.markdown(
                     "<div style='font-size:.82rem;color:#a1a1aa;padding:6px 0;'>"
