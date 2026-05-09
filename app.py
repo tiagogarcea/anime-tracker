@@ -2,13 +2,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import html
-from datetime import date, timedelta
+from datetime import date
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
+import random
+import math
 
-# --- CONFIGURACAO DA PAGINA ---
-st.set_page_config(page_title="Anime Tracker - Tiago Garcea", layout="wide")
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Anime Tracker - Tiago Garcéa", layout="wide")
 
 st.markdown("""
     <style>
@@ -22,29 +23,9 @@ st.markdown("""
         max-width: 1100px; margin-left: auto; margin-right: auto;
     }
     div[data-testid="stTabs"] button { font-weight: 600; font-size: 0.9rem; }
-    div[data-testid="stSidebar"] .stButton > button {
-        width: 100%; background: #1e1e24; border: 1px solid #3d3d45;
-        color: #a1a1aa; border-radius: 8px; font-size: 0.82rem; transition: all 0.2s ease;
-    }
-    div[data-testid="stSidebar"] .stButton > button:hover {
-        border-color: #e50914; color: #fff; background: rgba(229,9,20,0.1);
-    }
-    /* Skeleton loading */
-    @keyframes shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-    }
-    .skeleton {
-        background: linear-gradient(90deg, #16161a 25%, #1e1e24 50%, #16161a 75%);
-        background-size: 200% 100%;
-        animation: shimmer 1.5s infinite;
-        border-radius: 12px;
-    }
-    /* Empty state */
-    .empty-state {
-        text-align: center; padding: 60px 20px; color: #a1a1aa;
-    }
-    .empty-state-icon { font-size: 4rem; margin-bottom: 16px; }
+    /* Selectbox e toggle na sidebar ficam mais compactos */
+    div[data-testid="stSidebar"] .stSelectbox label,
+    div[data-testid="stSidebar"] .stToggle label { font-size: 0.82rem; color: #a1a1aa; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -56,13 +37,13 @@ GRID_COLOR  = "#2d2d33"
 TEXT_COLOR  = "#a1a1aa"
 ACCENT      = "#e50914"
 COLORS      = ["#e50914","#f47521","#2e51a2","#ffcc00","#22c55e",
-            "#a855f7","#06b6d4","#ec4899","#84cc16","#f97316"]
+               "#a855f7","#06b6d4","#ec4899","#84cc16","#f97316"]
 
 SORT_COLS = {
-    "N (padrao)": "N",
+    "N° (padrão)": "N°",
     "Nome":        "Nome",
     "Score":       "Score",
-    "Episodios":   "Episodes",
+    "Episódios":   "Episodes",
     "Visto em":    "_last_seen_dt",
     "Ano":         "_ano",
     "Studio":      "Studio",
@@ -74,7 +55,7 @@ def safe_str(val, fallback=""):
 
 def opts_from(series: pd.Series) -> list:
     return sorted({v for v in series.dropna().astype(str).str.strip()
-                if v.lower() not in ("nan", "none", "")})
+                   if v.lower() not in ("nan", "none", "")})
 
 def plotly_layout(fig, title="", xaxis_title="", yaxis_title=""):
     fig.update_layout(
@@ -83,14 +64,14 @@ def plotly_layout(fig, title="", xaxis_title="", yaxis_title=""):
         font=dict(color=TEXT_COLOR, size=11),
         margin=dict(l=10, r=10, t=40, b=10),
         xaxis=dict(title=xaxis_title, gridcolor=GRID_COLOR, linecolor=GRID_COLOR,
-                tickfont=dict(color=TEXT_COLOR)),
+                   tickfont=dict(color=TEXT_COLOR)),
         yaxis=dict(title=yaxis_title, gridcolor=GRID_COLOR, linecolor=GRID_COLOR,
-                tickfont=dict(color=TEXT_COLOR)),
+                   tickfont=dict(color=TEXT_COLOR)),
         showlegend=False,
     )
     return fig
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)
 def load_data():
     raw = pd.read_csv(SHEET_URL, header=None)
     header_idx = 0
@@ -100,7 +81,7 @@ def load_data():
             break
     df = pd.read_csv(SHEET_URL, skiprows=header_idx)
     df.columns = df.columns.str.strip()
-    for col in ['N', 'Score', 'Episodes', 'Time/episode', 'Rewatched']:
+    for col in ['N°', 'Score', 'Episodes', 'Time/episode', 'Rewatched']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     if 'Last seen' in df.columns:
@@ -108,11 +89,10 @@ def load_data():
         df['_last_seen_dt']    = _dt.dt.date
         df['_last_seen_year']  = _dt.dt.year
         df['_last_seen_month'] = _dt.dt.to_period('M').astype(str)
-        df['_last_seen_dow']   = _dt.dt.dayofweek
-        df['_last_seen_week']  = _dt.dt.isocalendar().week
+        df['_last_seen_date_only'] = _dt.dt.normalize()  # para o heatmap
     else:
         df['_last_seen_dt'] = df['_last_seen_year'] = df['_last_seen_month'] = None
-        df['_last_seen_dow'] = df['_last_seen_week'] = None
+        df['_last_seen_date_only'] = None
     if 'Temporada' in df.columns:
         split = df['Temporada'].astype(str).str.strip().str.split(' ', n=1, expand=True)
         df['_season'] = split[0].str.strip().replace({'nan': '', 'None': ''})
@@ -133,13 +113,13 @@ def build_card(item) -> str:
             break
     if not img:
         img = PLACEHOLDER
-    nome_display = html.escape(safe_str(item.get('Nome', ''), 'Sem titulo'))
+    nome_display = html.escape(safe_str(item.get('Nome', ''), 'Sem título'))
     is_fav       = "FAV" in str(item.get('Favorite', '')).upper()
     rw_val       = int(item.get('Rewatched', 0))
     score        = item.get('Score', 0)
     studio       = html.escape(safe_str(item.get('Studio', ''), '—'))
     eps          = int(item.get('Episodes', 0))
-    genero       = html.escape(safe_str(item.get('Genero', item.get('Genero', '')), '—'))
+    genero       = html.escape(safe_str(item.get('Gênero', item.get('Genero', '')), '—'))
     tema         = html.escape(safe_str(item.get('Tema', ''), '—'))
     temporada    = html.escape(safe_str(item.get('Temporada', ''), '—'))
     visto_em     = html.escape(safe_str(item.get('Last seen', ''), '—'))
@@ -158,164 +138,191 @@ def build_card(item) -> str:
     cry_btn     = f'<a href="{crunchy_url}" target="_blank" class="ext-btn btn-crunchy">Crunchyroll</a>' if crunchy_url.startswith("http") else ""
     btns        = f'<div class="detail-buttons">{mal_btn}{cry_btn}</div>' if (mal_btn or cry_btn) else ""
 
-    overlay = f'<div class="detail-overlay">' + \
-        f'<div class="overlay-title">{nome_display}</div>' + \
-        f'<div class="overlay-badges">{score_badge}{fav_badge}{rw_badge}</div>' + \
-        f'<div class="overlay-meta">' + \
-        f'<span><b>Studio:</b> {studio}</span><span><b>Genero:</b> {genero}</span>' + \
-        f'<span><b>Tema:</b> {tema}</span><span><b>Temporada:</b> {temporada}</span>' + \
-        f'<span><b>Eps:</b> {eps}</span><span><b>Visto em:</b> {visto_em}</span>' + \
-        f'</div>{com_html}{btns}</div>'
+    overlay = f'''<div class="detail-overlay">
+        <div class="overlay-title">{nome_display}</div>
+        <div class="overlay-badges">{score_badge}{fav_badge}{rw_badge}</div>
+        <div class="overlay-meta">
+            <span><b>Estúdio:</b> {studio}</span><span><b>Gênero:</b> {genero}</span>
+            <span><b>Tema:</b> {tema}</span><span><b>Temporada:</b> {temporada}</span>
+            <span><b>Eps:</b> {eps}</span><span><b>Visto em:</b> {visto_em}</span>
+        </div>{com_html}{btns}
+    </div>'''
 
-    return f'<div class="anime-container">{fav_html}{rw_html}' + \
-        f'<div class="badge-score">&#9733; {score}</div>' + \
-        f'<img src="{img}" class="poster-img" loading="lazy" onerror="this.src=\'{PLACEHOLDER}\'">' + \
-        f'<div class="anime-info"><div class="anime-title">{nome_display}</div>' + \
-        f'<div class="anime-details">{studio} &bull; {eps} eps</div></div>{overlay}</div>'
+    return f'''<div class="anime-container">
+        {fav_html}{rw_html}
+        <div class="badge-score">&#9733; {score}</div>
+        <img src="{img}" class="poster-img" onerror="this.src='{PLACEHOLDER}'">
+        <div class="anime-info">
+            <div class="anime-title">{nome_display}</div>
+            <div class="anime-details">{studio} &bull; {eps} eps</div>
+        </div>{overlay}
+    </div>'''
 
-def build_activity_heatmap(df):
-    if '_last_seen_dt' not in df.columns or df['_last_seen_dt'].isna().all():
+# ══════════════════════════════════════════════════════════════════════════════
+# ✅ #26: Sugestão aleatória ponderada
+# ══════════════════════════════════════════════════════════════════════════════
+def sortear_anime(df: pd.DataFrame) -> pd.Series | None:
+    """Sorteia um anime com peso: favoritos e scores altos têm mais chance,
+    assim como animes não vistos há mais tempo."""
+    if df.empty:
         return None
 
-    activity = df['_last_seen_dt'].dropna().value_counts().reset_index()
-    activity.columns = ['data', 'qtd']
-    activity['data'] = pd.to_datetime(activity['data'])
+    today = date.today()
+    weights = []
+    for _, row in df.iterrows():
+        score   = float(row.get('Score', 0) or 0)
+        is_fav  = "FAV" in str(row.get('Favorite', '')).upper()
+        last_dt = row.get('_last_seen_dt', None)
 
-    min_date = activity['data'].min()
-    max_date = activity['data'].max()
-    date_range = pd.date_range(start=min_date, end=max_date, freq='D')
+        # Base: score normalizado (0-10 → 1-11)
+        w = max(1.0, score)
 
-    full_dates = pd.DataFrame({'data': date_range})
-    activity = full_dates.merge(activity, on='data', how='left').fillna(0)
-    activity['qtd'] = activity['qtd'].astype(int)
+        # Favorito: dobra o peso
+        if is_fav:
+            w *= 2.0
 
-    activity['semana'] = activity['data'].dt.isocalendar().week
-    activity['ano'] = activity['data'].dt.isocalendar().year
-    activity['dow'] = activity['data'].dt.dayofweek
-    activity['semana_continua'] = activity['ano'] * 53 + activity['semana']
+        # Tempo desde o último visto: +0.1 por mês afastado (máx. +12)
+        if last_dt and isinstance(last_dt, date):
+            delta_days = (today - last_dt).days
+            months_ago = delta_days / 30.0
+            w += min(months_ago * 0.1, 12.0)
 
-    max_qtd = activity['qtd'].max()
+        weights.append(w)
 
-    fig = go.Figure()
+    total = sum(weights)
+    normalized = [w / total for w in weights]
+    chosen_idx = random.choices(range(len(df)), weights=normalized, k=1)[0]
+    return df.iloc[chosen_idx]
 
-    for _, row in activity.iterrows():
-        intensity = row['qtd'] / max_qtd if max_qtd > 0 else 0
-        if row['qtd'] == 0:
-            color = '#16161a'
-        elif intensity < 0.25:
-            color = '#3d0f12'
-        elif intensity < 0.5:
-            color = '#7a1f24'
-        elif intensity < 0.75:
-            color = '#b83038'
-        else:
-            color = '#e50914'
 
-        fig.add_trace(go.Scatter(
-            x=[row['semana_continua']],
-            y=[row['dow']],
-            mode='markers',
-            marker=dict(
-                size=12,
-                color=color,
-                line=dict(color='#0a0a0c', width=1)
-            ),
-            hovertemplate=f"Data: {row['data'].strftime('%d/%m/%Y')}<br>Animes: {row['qtd']}<extra></extra>",
-            showlegend=False
-        ))
+# ══════════════════════════════════════════════════════════════════════════════
+# ✅ #16: Heatmap de atividade estilo GitHub
+# ══════════════════════════════════════════════════════════════════════════════
+def build_activity_heatmap(df: pd.DataFrame):
+    """Gera heatmap de atividade por dia (estilo GitHub contributions)."""
+    if '_last_seen_date_only' not in df.columns:
+        return None
 
-    dias_semana = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
+    counts = (
+        df['_last_seen_date_only']
+        .dropna()
+        .value_counts()
+        .reset_index()
+    )
+    counts.columns = ['date', 'count']
+    counts['date'] = pd.to_datetime(counts['date'])
+    if counts.empty:
+        return None
+
+    # Expande para todos os dias no intervalo
+    min_date = counts['date'].min()
+    max_date = counts['date'].max()
+    all_days = pd.date_range(min_date, max_date, freq='D')
+    full = pd.DataFrame({'date': all_days})
+    full = full.merge(counts, on='date', how='left').fillna({'count': 0})
+    full['count'] = full['count'].astype(int)
+    full['week']    = ((full['date'] - full['date'].min()).dt.days // 7)
+    full['weekday'] = full['date'].dt.weekday   # 0=Mon … 6=Sun
+    full['label']   = full['date'].dt.strftime('%d/%m/%Y')
+    full['month_label'] = full['date'].dt.strftime('%b %Y')
+
+    # Monta o grid para plotly heatmap
+    pivot = full.pivot_table(index='weekday', columns='week', values='count', aggfunc='sum', fill_value=0)
+
+    # Rótulos de mês no eixo X (uma por semana quando muda de mês)
+    week_months = full.groupby('week')['date'].first().dt.strftime('%b')
+    x_ticks     = week_months.values.tolist()
+
+    # Hover text
+    hover = full.pivot_table(index='weekday', columns='week', values='label', aggfunc='first')
+
+    fig = go.Figure(go.Heatmap(
+        z=pivot.values,
+        x=list(pivot.columns),
+        y=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'],
+        text=hover.reindex(index=pivot.index, columns=pivot.columns).values,
+        hovertemplate='%{text}<br>%{z} anime(s)<extra></extra>',
+        colorscale=[
+            [0.0,  '#1a1a1f'],
+            [0.01, '#3d0a0d'],
+            [0.3,  '#a01020'],
+            [1.0,  '#e50914'],
+        ],
+        showscale=False,
+        xgap=3,
+        ygap=3,
+    ))
+
     fig.update_layout(
-        title=dict(text="Atividade de Visualizacao", font=dict(color="#fff", size=15), x=0.02),
+        title=dict(text='🗓️ Heatmap de Atividade', font=dict(color='#fff', size=15), x=0.02),
         paper_bgcolor=CHART_PAPER,
         plot_bgcolor=CHART_BG,
         font=dict(color=TEXT_COLOR, size=10),
-        margin=dict(l=40, r=10, t=40, b=30),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(
+        margin=dict(l=10, r=10, t=40, b=40),
+        height=220,
+        xaxis=dict(
             tickmode='array',
-            tickvals=list(range(7)),
-            ticktext=dias_semana,
-            showgrid=False,
-            zeroline=False,
-            tickfont=dict(color=TEXT_COLOR)
+            tickvals=list(range(0, len(x_ticks), max(1, len(x_ticks)//12))),
+            ticktext=[x_ticks[i] for i in range(0, len(x_ticks), max(1, len(x_ticks)//12))],
+            showgrid=False, linecolor=GRID_COLOR, tickfont=dict(color=TEXT_COLOR),
         ),
-        height=200,
-        hovermode='closest'
+        yaxis=dict(
+            showgrid=False, linecolor=GRID_COLOR, tickfont=dict(color=TEXT_COLOR),
+            autorange='reversed',
+        ),
     )
-
     return fig
 
-def get_random_suggestion(df):
-    if len(df) == 0:
-        return None
 
-    eligible = df.copy()
-    weights = eligible['Score'].fillna(5) + 1
-
-    if 'Favorite' in eligible.columns:
-        weights += eligible['Favorite'].astype(str).str.contains('FAV', case=False).astype(int) * 5
-
-    if '_last_seen_dt' in eligible.columns:
-        days_since = eligible['_last_seen_dt'].apply(
-            lambda x: (date.today() - x).days if pd.notna(x) else 365
-        )
-        weights += (days_since / 365).clip(0, 3)
-
-    weights = weights.fillna(1).clip(lower=0.1)
-
-    idx = np.random.choice(eligible.index, p=weights/weights.sum())
-    return eligible.loc[idx]
-
-# ==============================================================================
+# ══════════════════════════════════════════════════════════════════════════════
 try:
-    if 'data_loaded' not in st.session_state:
-        st.session_state['data_loaded'] = False
+    # ✅ #12: Cache em session_state + spinner no carregamento inicial
+    if 'df_raw_cache' not in st.session_state:
+        with st.spinner("🎌 Carregando sua coleção…"):
+            st.session_state['df_raw_cache'] = load_data()
 
-    if not st.session_state['data_loaded']:
-        with st.spinner('Carregando sua colecao...'):
-            df_raw = load_data()
-            st.session_state['df_raw'] = df_raw
-            st.session_state['data_loaded'] = True
-            st.rerun()
-    else:
-        df_raw = st.session_state['df_raw']
+    df_raw = st.session_state['df_raw_cache']
 
     if "v"         not in st.session_state: st.session_state["v"]        = 0
-    if "sort_col"  not in st.session_state: st.session_state["sort_col"] = "N (padrao)"
+    if "sort_col"  not in st.session_state: st.session_state["sort_col"] = "N° (padrão)"
     if "sort_asc"  not in st.session_state: st.session_state["sort_asc"] = True
+    if "sugestao"  not in st.session_state: st.session_state["sugestao"] = None
 
     v = st.session_state["v"]
 
     st.markdown("""
         <div style='margin-bottom:20px;'>
-            <h1 style='margin:0;'>ANIME <span style='color:#e50914;'>TRACKER</span></h1>
-            <p style='margin:0;color:#888;'>Versao 2.4.0</p>
+            <h1 style='margin:0;'>🎬 ANIME <span style='color:#e50914;'>TRACKER</span></h1>
+            <p style='margin:0;color:#888;'>Versão 2.4.0</p>
         </div>
     """, unsafe_allow_html=True)
 
+    # ── KPIs ──────────────────────────────────────────────────────────────────
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("ANIMES ASSISTIDOS", len(df_raw))
-    k2.metric("SCORE MEDIO", f"{df_raw['Score'].mean():.2f}")
+    k2.metric("SCORE MÉDIO", f"{df_raw['Score'].mean():.2f}")
     total_dias = df_raw['Tempo_Total_Dias'].sum()
     k3.metric("TEMPO ASSISTIDO", f"{int(total_dias)}d {int((total_dias % 1) * 24)}h")
 
     eps_total   = int(df_raw['_eps_total'].sum())
     eps_rewatch = int(df_raw['_eps_rewatch'].sum())
     with k4:
-            st.metric("EPISODIOS TOTAIS", f"{eps_total:,}")
-            st.markdown(
-                f"<div style='font-size:0.82rem;color:#e50914;margin-top:-12px;"
-                f"padding-left:4px;font-weight:600;'> {eps_rewatch:,} eps de rewatch</div>",
-                unsafe_allow_html=True
-            )
+        st.metric("EPISÓDIOS TOTAIS", f"{eps_total:,}")
+        st.markdown(
+            f"<div style='font-size:0.82rem;color:#e50914;margin-top:-12px;"
+            f"padding-left:4px;font-weight:600;'>🔄 {eps_rewatch:,} eps de rewatch</div>",
+            unsafe_allow_html=True
+        )
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # SIDEBAR
+    # ══════════════════════════════════════════════════════════════════════════
     sb = st.sidebar
-    sb.header("Filtros")
+    sb.header("🎯 Filtros")
 
-    if sb.button("Limpar todos os filtros"):
+    if sb.button("🗑️ Limpar todos os filtros"):
         st.session_state["v"]        = v + 1
-        st.session_state["sort_col"] = "N (padrao)"
+        st.session_state["sort_col"] = "N° (padrão)"
         st.session_state["sort_asc"] = True
         st.rerun()
 
@@ -323,7 +330,8 @@ try:
 
     pool = df_raw.copy()
 
-    busca = sb.text_input("Buscar nome...", placeholder="Nome em JP ou EN", key=f"busca_{v}")
+    # 1. Busca
+    busca = sb.text_input("🔍 Buscar nome...", placeholder="Nome em JP ou EN", key=f"busca_{v}")
     if busca:
         mask = pool['Nome'].str.contains(busca, case=False, na=False)
         if 'Nome_Ingles' in pool.columns:
@@ -332,11 +340,12 @@ try:
 
     sb.markdown("---")
 
+    # 2. Score slider
     score_vals = sorted(pool['Score'][pool['Score'] > 0].unique())
     if score_vals:
         s_min, s_max = int(min(score_vals)), int(max(score_vals))
         if s_min < s_max:
-            sb.markdown("** Score**")
+            sb.markdown("**⭐ Score**")
             sc_from, sc_to = sb.slider(
                 "score_range", min_value=s_min, max_value=s_max,
                 value=(s_min, s_max), format="%d",
@@ -345,15 +354,16 @@ try:
             c1.markdown(f"<div style='font-size:.78rem;color:#a1a1aa;'>De<br>"
                         f"<b style='color:#fff;font-size:.85rem;'>{sc_from}</b></div>",
                         unsafe_allow_html=True)
-            c2.markdown(f"<div style='font-size:.78rem;color:#a1a1aa;text-align:right;'>Ate<br>"
+            c2.markdown(f"<div style='font-size:.78rem;color:#a1a1aa;text-align:right;'>Até<br>"
                         f"<b style='color:#fff;font-size:.85rem;'>{sc_to}</b></div>",
                         unsafe_allow_html=True)
             pool = pool[(pool['Score'] >= sc_from) & (pool['Score'] <= sc_to)]
 
+    # 3. Visto Entre
     valid_dates = sorted(set(pool['_last_seen_dt'].dropna().tolist()))
     if len(valid_dates) > 1:
         n = len(valid_dates) - 1
-        sb.markdown("** Visto Entre**")
+        sb.markdown("**📆 Visto Entre**")
         idx_from, idx_to = sb.slider(
             "intervalo_data", min_value=0, max_value=n,
             value=(0, n), format="%d",
@@ -364,63 +374,71 @@ try:
         c1.markdown(f"<div style='font-size:.78rem;color:#a1a1aa;'>De<br>"
                     f"<b style='color:#fff;font-size:.85rem;'>{date_from.strftime('%d/%m/%Y')}</b></div>",
                     unsafe_allow_html=True)
-        c2.markdown(f"<div style='font-size:.78rem;color:#a1a1aa;text-align:right;'>Ate<br>"
+        c2.markdown(f"<div style='font-size:.78rem;color:#a1a1aa;text-align:right;'>Até<br>"
                     f"<b style='color:#fff;font-size:.85rem;'>{date_to.strftime('%d/%m/%Y')}</b></div>",
                     unsafe_allow_html=True)
         in_range = pool['_last_seen_dt'].apply(
             lambda d: d is not None and date_from <= d <= date_to)
         pool = pool[pool['_last_seen_dt'].notna() & in_range]
     elif len(valid_dates) == 1:
-        sb.markdown("** Visto Em**")
+        sb.markdown("**📆 Visto Em**")
         sb.caption(valid_dates[0].strftime('%d/%m/%Y'))
 
     sb.markdown("---")
 
-    sel_season = sb.multiselect("Season", opts_from(pool['_season']), key=f"season_{v}")
+    # 4. Season
+    sel_season = sb.multiselect("🌸 Season", opts_from(pool['_season']), key=f"season_{v}")
     if sel_season:
         pool = pool[pool['_season'].isin(sel_season)]
 
-    sel_ano = sb.multiselect("Ano", opts_from(pool['_ano']), key=f"ano_{v}")
+    # 5. Ano
+    sel_ano = sb.multiselect("📅 Ano", opts_from(pool['_ano']), key=f"ano_{v}")
     if sel_ano:
         pool = pool[pool['_ano'].isin(sel_ano)]
 
     sb.markdown("---")
 
-    sel_studio = sb.multiselect("Studio",
+    # 6. Estúdio
+    sel_studio = sb.multiselect("🏢 Estúdio",
                                 opts_from(pool['Studio']) if 'Studio' in pool.columns else [],
                                 key=f"studio_{v}")
     if sel_studio:
         pool = pool[pool['Studio'].astype(str).str.strip().isin(sel_studio)]
 
-    col_g      = 'Genero' if 'Genero' in pool.columns else 'Genero'
-    sel_genero = sb.multiselect("Genero",
+    # 7. Gênero
+    col_g      = 'Gênero' if 'Gênero' in pool.columns else 'Genero'
+    sel_genero = sb.multiselect("🎭 Gênero",
                                 opts_from(pool[col_g]) if col_g in pool.columns else [],
                                 key=f"genero_{v}")
     if sel_genero:
         pool = pool[pool[col_g].astype(str).str.strip().isin(sel_genero)]
 
-    sel_tema = sb.multiselect("Tema",
-                            opts_from(pool['Tema']) if 'Tema' in pool.columns else [],
-                            key=f"tema_{v}")
+    # 8. Tema
+    sel_tema = sb.multiselect("🏷️ Tema",
+                              opts_from(pool['Tema']) if 'Tema' in pool.columns else [],
+                              key=f"tema_{v}")
     if sel_tema:
         pool = pool[pool['Tema'].astype(str).str.strip().isin(sel_tema)]
 
-    sel_demog = sb.multiselect("Demografia",
-                            opts_from(pool['Demografia']) if 'Demografia' in pool.columns else [],
-                            key=f"demog_{v}")
+    # 9. Demografia
+    sel_demog = sb.multiselect("👥 Demografia",
+                               opts_from(pool['Demografia']) if 'Demografia' in pool.columns else [],
+                               key=f"demog_{v}")
     if sel_demog:
         pool = pool[pool['Demografia'].astype(str).str.strip().isin(sel_demog)]
 
+    # 10. Favorito
     fav_opts = [fv for fv in opts_from(pool['Favorite']) if fv] if 'Favorite' in pool.columns else []
-    sel_fav  = sb.multiselect("Favorito", fav_opts, key=f"fav_{v}")
+    sel_fav  = sb.multiselect("❤️ Favorito", fav_opts, key=f"fav_{v}")
     if sel_fav:
         pool = pool[pool['Favorite'].astype(str).str.strip().isin(sel_fav)]
 
+    # 11. Rewatched
     if 'Rewatched' in pool.columns:
         rw_opts_set  = sorted({int(x) for x in pool['Rewatched'].unique()})
-        sel_rw       = sb.multiselect("Rewatched (n vezes)",
-                                    [str(x) for x in rw_opts_set],
-                                    key=f"rw_{v}")
+        sel_rw       = sb.multiselect("🔁 Rewatched (nº vezes)",
+                                      [str(x) for x in rw_opts_set],
+                                      key=f"rw_{v}")
         if sel_rw:
             pool = pool[pool['Rewatched'].astype(int).astype(str).isin(sel_rw)]
     else:
@@ -428,97 +446,126 @@ try:
 
     sb.markdown("---")
 
-    # 11. ORDENACAO MAIS INTUITIVA
-    sb.markdown("** Ordenar por**")
-
-    sort_options = list(SORT_COLS.keys())
-    current_sort = st.session_state["sort_col"]
-
-    selected_sort = sb.selectbox(
-        "Ordenar por",
-        options=sort_options,
-        index=sort_options.index(current_sort) if current_sort in sort_options else 0,
+    # ✅ #11: Ordenação com selectbox + toggle (substitui os botões de seta)
+    sb.markdown("**↕️ Ordenar por**")
+    sort_col_label = sb.selectbox(
+        "Coluna de ordenação",
+        options=list(SORT_COLS.keys()),
+        index=list(SORT_COLS.keys()).index(st.session_state["sort_col"]),
         label_visibility="collapsed",
-        key=f"sort_select_{v}"
+        key=f"sort_select_{v}",
+    )
+    sort_asc_toggle = sb.toggle(
+        "⬆️ Crescente",
+        value=st.session_state["sort_asc"],
+        key=f"sort_toggle_{v}",
     )
 
-    sort_asc = sb.toggle("Crescente", value=st.session_state["sort_asc"], key=f"sort_toggle_{v}")
-
-    if selected_sort != current_sort or sort_asc != st.session_state["sort_asc"]:
-        st.session_state["sort_col"] = selected_sort
-        st.session_state["sort_asc"] = sort_asc
+    # Atualiza estado somente se mudou (evita rerun desnecessário)
+    if sort_col_label != st.session_state["sort_col"] or sort_asc_toggle != st.session_state["sort_asc"]:
+        st.session_state["sort_col"] = sort_col_label
+        st.session_state["sort_asc"] = sort_asc_toggle
         st.rerun()
 
+    # ── Aplica ordenação ──────────────────────────────────────────────────────
     df = pool.copy()
     sort_col_key = SORT_COLS[st.session_state["sort_col"]]
-    sort_asc_final = st.session_state["sort_asc"]
-
+    sort_asc     = st.session_state["sort_asc"]
     if sort_col_key in df.columns:
         try:
-            df = df.sort_values(by=sort_col_key, ascending=sort_asc_final, na_position='last',
+            df = df.sort_values(by=sort_col_key, ascending=sort_asc, na_position='last',
                                 key=lambda x: pd.to_numeric(x, errors='ignore'))
         except Exception:
-            df = df.sort_values(by=sort_col_key, ascending=sort_asc_final, na_position='last')
-    elif 'N' in df.columns:
-        df = df.sort_values(by='N', ascending=True)
+            df = df.sort_values(by=sort_col_key, ascending=sort_asc, na_position='last')
+    elif 'N°' in df.columns:
+        df = df.sort_values(by='N°', ascending=True)
 
-    tab_colecao, tab_graficos = st.tabs(["Colecao", "Graficos"])
+    # ══════════════════════════════════════════════════════════════════════════
+    # TABS
+    # ══════════════════════════════════════════════════════════════════════════
+    tab_colecao, tab_graficos = st.tabs(["🎬 Coleção", "📊 Gráficos"])
 
+    # ── TAB COLEÇÃO ───────────────────────────────────────────────────────────
     with tab_colecao:
-        sort_label = st.session_state["sort_col"]
-        sort_dir   = "crescente" if sort_asc_final else "decrescente"
 
+        # ✅ #26: Sugestão aleatória ponderada ─────────────────────────────────
+        with st.expander("🎲 Sugestão do Dia", expanded=False):
+            col_btn, col_info = st.columns([1, 3])
+            with col_btn:
+                if st.button("🎯 Me indica um anime!", use_container_width=True):
+                    st.session_state["sugestao"] = sortear_anime(df)
+
+            sug = st.session_state.get("sugestao")
+            if sug is not None:
+                img_url = ""
+                for col in ['Link', 'Imagem']:
+                    val = safe_str(sug.get(col, ""))
+                    if val and val.startswith("http"):
+                        img_url = val
+                        break
+                if not img_url:
+                    img_url = PLACEHOLDER
+
+                sug_nome    = safe_str(sug.get('Nome', ''), 'Sem título')
+                sug_score   = sug.get('Score', 0)
+                sug_studio  = safe_str(sug.get('Studio', ''), '—')
+                sug_eps     = int(sug.get('Episodes', 0))
+                sug_temp    = safe_str(sug.get('Temporada', ''), '—')
+                sug_is_fav  = "FAV" in str(sug.get('Favorite', '')).upper()
+                sug_mal     = safe_str(sug.get('URL_Pagina', ''))
+                sug_cry     = safe_str(sug.get('Link do Anime', ''))
+
+                fav_tag = " ❤️ FAV" if sug_is_fav else ""
+
+                c_img, c_det = st.columns([1, 3])
+                with c_img:
+                    st.image(img_url, width=140)
+                with c_det:
+                    st.markdown(
+                        f"<div style='font-size:1.05rem;font-weight:700;color:#fff;margin-bottom:4px;'>"
+                        f"{html.escape(sug_nome)}{fav_tag}</div>"
+                        f"<div style='font-size:.82rem;color:#ffcc00;margin-bottom:6px;'>⭐ {sug_score}</div>"
+                        f"<div style='font-size:.8rem;color:#a1a1aa;'>"
+                        f"🏢 {html.escape(sug_studio)} &bull; 📺 {sug_eps} eps &bull; 🗓️ {html.escape(sug_temp)}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                    btn_cols = st.columns(2)
+                    if sug_mal.startswith("http"):
+                        btn_cols[0].link_button("MyAnimeList", sug_mal)
+                    if sug_cry.startswith("http"):
+                        btn_cols[1].link_button("Crunchyroll", sug_cry)
+
+        st.markdown("---")
+
+        sort_label = st.session_state["sort_col"]
+        sort_dir   = "↑ crescente" if sort_asc else "↓ decrescente"
         st.markdown(
-            f"### Sua colecao ({len(df)} animes) "
+            f"### Sua coleção ({len(df)} animes) "
             f"<span style='font-size:0.8rem;color:#a1a1aa;font-weight:normal;'>"
             f"— ordenado por <b style='color:#e50914'>{sort_label}</b> {sort_dir}</span>",
             unsafe_allow_html=True)
 
-        # 26. SUGESTAO ALEATORIA
-        if len(df) > 0:
-            with st.expander("Sugestao do Dia", expanded=False):
-                if st.button("Me indica um anime!", use_container_width=True):
-                    suggestion = get_random_suggestion(df)
-                    if suggestion is not None:
-                        st.session_state['suggested_anime'] = suggestion.to_dict()
-
-                if 'suggested_anime' in st.session_state:
-                    sug = st.session_state['suggested_anime']
-                    col_img, col_info = st.columns([1, 3])
-                    with col_img:
-                        img_url = ""
-                        for col in ['Link', 'Imagem']:
-                            val = safe_str(sug.get(col, ""))
-                            if val and val.startswith("http"):
-                                img_url = val
-                                break
-                        if not img_url:
-                            img_url = PLACEHOLDER
-                        st.image(img_url, width=150)
-                    with col_info:
-                        st.markdown(f"### {html.escape(safe_str(sug.get('Nome', ''), 'Sem titulo'))}")
-                        st.markdown(f"**Score:** {sug.get('Score', '—')} | **Studio:** {safe_str(sug.get('Studio', ''), '—')}")
-                        st.markdown(f"**Episodios:** {int(sug.get('Episodes', 0))} | **Rewatches:** {int(sug.get('Rewatched', 0))}")
-                        if safe_str(sug.get('Coments', sug.get('Comments', ''))):
-                            st.markdown(f"*{html.escape(safe_str(sug.get('Coments', sug.get('Comments', '')), ''))}*")
-
-                        mal_url = safe_str(sug.get('URL_Pagina', ''))
-                        crunchy_url = safe_str(sug.get('Link do Anime', ''))
-                        cols = st.columns(2)
-                        if mal_url.startswith("http"):
-                            cols[0].link_button("MAL", mal_url, use_container_width=True)
-                        if crunchy_url.startswith("http"):
-                            cols[1].link_button("Crunchyroll", crunchy_url, use_container_width=True)
-
-        # 12. EMPTY STATE
-        if len(df) == 0:
-            st.markdown("""
-                <div class="empty-state">
-                    <div class="empty-state-icon"></div>
-                    <h3 style="color:#fff;margin-bottom:8px;">Nenhum anime encontrado</h3>
-                    <p>Tente ajustar seus filtros ou limpar a busca para ver mais resultados.</p>
+        # ✅ #12: Empty state quando nenhum anime corresponde aos filtros
+        if df.empty:
+            st.markdown(
+                """
+                <div style='
+                    text-align:center;padding:60px 20px;
+                    background:#16161a;border-radius:16px;
+                    border:1px dashed #3d3d45;margin-top:20px;
+                '>
+                    <div style='font-size:3rem;margin-bottom:12px;'>😢</div>
+                    <div style='font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:6px;'>
+                        Nenhum anime encontrado
+                    </div>
+                    <div style='font-size:.88rem;color:#a1a1aa;'>
+                        Tente ajustar ou limpar os filtros na sidebar.
+                    </div>
                 </div>
-            """, unsafe_allow_html=True)
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             cards_html = "".join(build_card(row) for _, row in df.iterrows())
 
@@ -565,23 +612,42 @@ text-decoration:none;text-align:center;transition:opacity .15s ease,transform .1
             num_rows = (len(df) + 4) // 5
             components.html(full_html, height=max(500, num_rows * 395), scrolling=False)
 
+    # ── TAB GRÁFICOS ──────────────────────────────────────────────────────────
     with tab_graficos:
-        st.markdown("### Distribuicao da Colecao")
+        st.markdown("### 📊 Distribuição da Coleção")
         st.caption(f"Baseado nos {len(df)} animes filtrados atualmente.")
 
         def clean(col):
             return df[col].astype(str).str.strip().replace(
                 {'nan': None, 'None': None, '': None}).dropna()
 
+        # ✅ #16: Heatmap de atividade no topo da aba de gráficos
+        heatmap_fig = build_activity_heatmap(df)
+        if heatmap_fig:
+            st.plotly_chart(heatmap_fig, use_container_width=True)
+            st.markdown(
+                "<div style='display:flex;align-items:center;gap:6px;font-size:.75rem;"
+                "color:#a1a1aa;margin-top:-10px;margin-bottom:16px;padding-left:4px;'>"
+                "<span>Menos</span>"
+                "<span style='display:inline-flex;gap:3px;'>"
+                "<span style='width:12px;height:12px;border-radius:2px;background:#1a1a1f;display:inline-block;'></span>"
+                "<span style='width:12px;height:12px;border-radius:2px;background:#3d0a0d;display:inline-block;'></span>"
+                "<span style='width:12px;height:12px;border-radius:2px;background:#a01020;display:inline-block;'></span>"
+                "<span style='width:12px;height:12px;border-radius:2px;background:#e50914;display:inline-block;'></span>"
+                "</span><span>Mais</span></div>",
+                unsafe_allow_html=True,
+            )
+
+        # Linha 1: Score + Ano
         c1, c2 = st.columns(2)
         with c1:
             sc_df = df[df['Score'] > 0]['Score'].astype(int).value_counts().sort_index().reset_index()
             sc_df.columns = ['Score', 'Qtd']
             fig = px.bar(sc_df, x='Score', y='Qtd', color='Score',
-                        color_continuous_scale=['#2e51a2','#e50914'], text='Qtd')
+                         color_continuous_scale=['#2e51a2','#e50914'], text='Qtd')
             fig.update_traces(textposition='outside', textfont_color='#fff')
             fig.update_coloraxes(showscale=False)
-            plotly_layout(fig, "Distribuicao por Score", "Score", "Animes")
+            plotly_layout(fig, "⭐ Distribuição por Score", "Score", "Animes")
             fig.update_layout(height=320)
             st.plotly_chart(fig, use_container_width=True)
         with c2:
@@ -589,61 +655,47 @@ text-decoration:none;text-align:center;transition:opacity .15s ease,transform .1
             ano_df.columns = ['Ano', 'Qtd']
             fig = px.bar(ano_df, x='Ano', y='Qtd', text='Qtd', color_discrete_sequence=[ACCENT])
             fig.update_traces(textposition='outside', textfont_color='#fff')
-            plotly_layout(fig, "Animes por Ano de Lancamento", "Ano", "Animes")
+            plotly_layout(fig, "📅 Animes por Ano de Lançamento", "Ano", "Animes")
             fig.update_layout(height=320)
             st.plotly_chart(fig, use_container_width=True)
 
-        # 16. HEATMAP DE ATIVIDADE
-        heatmap_fig = build_activity_heatmap(df)
-        if heatmap_fig is not None:
-            st.plotly_chart(heatmap_fig, use_container_width=True)
-
-            st.markdown("""
-                <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:-10px;margin-bottom:20px;">
-                    <span style="font-size:0.75rem;color:#a1a1aa;">Menos</span>
-                    <div style="width:12px;height:12px;background:#16161a;border-radius:2px;border:1px solid #2d2d33;"></div>
-                    <div style="width:12px;height:12px;background:#3d0f12;border-radius:2px;"></div>
-                    <div style="width:12px;height:12px;background:#7a1f24;border-radius:2px;"></div>
-                    <div style="width:12px;height:12px;background:#b83038;border-radius:2px;"></div>
-                    <div style="width:12px;height:12px;background:#e50914;border-radius:2px;"></div>
-                    <span style="font-size:0.75rem;color:#a1a1aa;">Mais</span>
-                </div>
-            """, unsafe_allow_html=True)
-
+        # Linha 2: Visto em (área)
         if '_last_seen_month' in df.columns:
             visto_df = df['_last_seen_month'].dropna().value_counts().sort_index().reset_index()
-            visto_df.columns = ['Periodo', 'Qtd']
+            visto_df.columns = ['Período', 'Qtd']
             if not visto_df.empty:
-                fig = px.area(visto_df, x='Periodo', y='Qtd', color_discrete_sequence=[ACCENT])
+                fig = px.area(visto_df, x='Período', y='Qtd', color_discrete_sequence=[ACCENT])
                 fig.update_traces(line_color=ACCENT, fillcolor="rgba(229,9,20,0.15)")
-                plotly_layout(fig, "Animes Assistidos ao Longo do Tempo", "Mes", "Animes")
+                plotly_layout(fig, "📆 Animes Assistidos ao Longo do Tempo", "Mês", "Animes")
                 fig.update_layout(height=280)
                 st.plotly_chart(fig, use_container_width=True)
 
+        # Linha 3: Rewatch por anime (top 20)
         rw_df = df[df['Rewatched'] > 0][['Nome', 'Rewatched']].copy()
         rw_df = rw_df.sort_values('Rewatched', ascending=False).head(20)
         if not rw_df.empty:
             rw_df = rw_df.sort_values('Rewatched', ascending=True)
             fig = px.bar(rw_df, x='Rewatched', y='Nome', orientation='h',
-                        text='Rewatched', color='Rewatched',
-                        color_continuous_scale=['#2d2d33', '#f47521'])
+                         text='Rewatched', color='Rewatched',
+                         color_continuous_scale=['#2d2d33', '#f47521'])
             fig.update_traces(textposition='outside', textfont_color='#fff')
             fig.update_coloraxes(showscale=False)
-            plotly_layout(fig, "Top 20 Animes com Mais Rewatches", "Rewatches", "")
+            plotly_layout(fig, "🔁 Top 20 Animes com Mais Rewatches", "Rewatches", "")
             fig.update_layout(height=max(320, len(rw_df) * 28 + 60),
-                            yaxis=dict(tickfont=dict(size=10)))
+                              yaxis=dict(tickfont=dict(size=10)))
             st.plotly_chart(fig, use_container_width=True)
 
+        # Linha 4: Estúdio + Tema
         c3, c4 = st.columns(2)
         with c3:
             st_df = clean('Studio').value_counts().head(15).reset_index()
             st_df.columns = ['Studio', 'Qtd']
             st_df = st_df.sort_values('Qtd')
             fig = px.bar(st_df, x='Qtd', y='Studio', orientation='h', text='Qtd',
-                        color='Qtd', color_continuous_scale=['#2d2d33', ACCENT])
+                         color='Qtd', color_continuous_scale=['#2d2d33', ACCENT])
             fig.update_traces(textposition='outside', textfont_color='#fff')
             fig.update_coloraxes(showscale=False)
-            plotly_layout(fig, "Top 15 Studios", "Animes", "")
+            plotly_layout(fig, "🏢 Top 15 Estúdios", "Animes", "")
             fig.update_layout(height=420, yaxis=dict(tickfont=dict(size=10)))
             st.plotly_chart(fig, use_container_width=True)
         with c4:
@@ -652,44 +704,45 @@ text-decoration:none;text-align:center;transition:opacity .15s ease,transform .1
                 tm_df.columns = ['Tema', 'Qtd']
                 tm_df = tm_df.sort_values('Qtd')
                 fig = px.bar(tm_df, x='Qtd', y='Tema', orientation='h', text='Qtd',
-                            color='Qtd', color_continuous_scale=['#2d2d33', '#f47521'])
+                             color='Qtd', color_continuous_scale=['#2d2d33', '#f47521'])
                 fig.update_traces(textposition='outside', textfont_color='#fff')
                 fig.update_coloraxes(showscale=False)
-                plotly_layout(fig, "Top 12 Temas", "Animes", "")
+                plotly_layout(fig, "🏷️ Top 12 Temas", "Animes", "")
                 fig.update_layout(height=420, yaxis=dict(tickfont=dict(size=10)))
                 st.plotly_chart(fig, use_container_width=True)
 
+        # Linha 5: Demografia + Gênero
         c5, c6 = st.columns(2)
         with c5:
             if 'Demografia' in df.columns:
                 dem_df = clean('Demografia').value_counts().reset_index()
                 dem_df.columns = ['Demografia', 'Qtd']
                 fig = px.pie(dem_df, names='Demografia', values='Qtd',
-                            color_discrete_sequence=COLORS, hole=0.45)
+                             color_discrete_sequence=COLORS, hole=0.45)
                 fig.update_traces(textposition='outside', textinfo='label+percent',
-                                textfont_color='#ddd',
-                                marker=dict(line=dict(color='#0a0a0c', width=2)))
+                                  textfont_color='#ddd',
+                                  marker=dict(line=dict(color='#0a0a0c', width=2)))
                 fig.update_layout(
-                    title=dict(text="Distribuicao por Demografia",
-                            font=dict(color="#fff", size=15), x=0.02),
+                    title=dict(text="👥 Distribuição por Demografia",
+                               font=dict(color="#fff", size=15), x=0.02),
                     paper_bgcolor=CHART_PAPER, plot_bgcolor=CHART_BG,
                     font=dict(color=TEXT_COLOR), showlegend=True, height=360,
                     margin=dict(l=10, r=10, t=40, b=10),
                     legend=dict(font=dict(color=TEXT_COLOR), bgcolor='rgba(0,0,0,0)'))
                 st.plotly_chart(fig, use_container_width=True)
         with c6:
-            col_g2 = 'Genero' if 'Genero' in df.columns else 'Genero'
+            col_g2 = 'Gênero' if 'Gênero' in df.columns else 'Genero'
             if col_g2 in df.columns:
                 gen_df = clean(col_g2).value_counts().reset_index()
-                gen_df.columns = ['Genero', 'Qtd']
-                fig = px.pie(gen_df, names='Genero', values='Qtd',
-                            color_discrete_sequence=COLORS, hole=0.45)
+                gen_df.columns = ['Gênero', 'Qtd']
+                fig = px.pie(gen_df, names='Gênero', values='Qtd',
+                             color_discrete_sequence=COLORS, hole=0.45)
                 fig.update_traces(textposition='outside', textinfo='label+percent',
-                                textfont_color='#ddd',
-                                marker=dict(line=dict(color='#0a0a0c', width=2)))
+                                  textfont_color='#ddd',
+                                  marker=dict(line=dict(color='#0a0a0c', width=2)))
                 fig.update_layout(
-                    title=dict(text="Distribuicao por Genero",
-                            font=dict(color="#fff", size=15), x=0.02),
+                    title=dict(text="🎭 Distribuição por Gênero",
+                               font=dict(color="#fff", size=15), x=0.02),
                     paper_bgcolor=CHART_PAPER, plot_bgcolor=CHART_BG,
                     font=dict(color=TEXT_COLOR), showlegend=True, height=360,
                     margin=dict(l=10, r=10, t=40, b=10),
