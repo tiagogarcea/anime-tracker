@@ -611,15 +611,16 @@ html,body{{background:#0a0a0c;font-family:sans-serif;margin:0;padding:0;overflow
 <script>
   function sendHeight() {{
     var h = document.getElementById('card').offsetHeight;
-    window.parent.postMessage({{type: 'streamlit:setFrameHeight', height: h + 8}}, '*');
+    if (h > 0) window.parent.postMessage({{type: 'streamlit:setFrameHeight', height: h + 4}}, '*');
   }}
-  // Dispara após o layout estar pronto (sem depender da imagem)
+  sendHeight();
+  setTimeout(sendHeight, 0);
+  setTimeout(sendHeight, 80);
   window.addEventListener('load', sendHeight);
-  setTimeout(sendHeight, 50);
 </script>
 </body></html>"""
 
-                components.html(sug_html, height=320, scrolling=False)
+                components.html(sug_html, height=280, scrolling=False)
             else:
                 st.markdown(
                     "<div style='font-size:.82rem;color:#a1a1aa;padding:6px 0;'>"
