@@ -533,19 +533,19 @@ try:
                 sug_html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
+html,body{{background:#0a0a0c;font-family:sans-serif;margin:0;padding:0;overflow:hidden;}}
 .sug-card{{
     position:relative;background:#16161a;border-radius:14px;
     border:1px solid #e50914;box-shadow:0 0 24px rgba(229,9,20,0.18);
     display:flex;flex-direction:row;overflow:hidden;width:100%;
-    align-items:stretch;
 }}
+/* Poster ocupa largura fixa; a img fica absolute para preencher toda a altura do card */
 .sug-poster{{
-    position:relative;flex-shrink:0;width:160px;display:flex;
+    position:relative;flex-shrink:0;width:160px;
 }}
 .sug-poster img{{
-    width:160px;height:100%;object-fit:cover;display:block;
-    border-radius:14px 0 0 14px;flex:1;
+    position:absolute;top:0;left:0;width:100%;height:100%;
+    object-fit:cover;border-radius:14px 0 0 14px;
 }}
 .badge-score{{
     position:absolute;top:10px;right:10px;background:rgba(0,0,0,.78);
@@ -561,15 +561,14 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
     padding:2px 8px;border-radius:12px;font-size:.72em;z-index:5;color:#fff;
 }}
 .sug-body{{
-    display:flex;flex-direction:column;gap:10px;padding:18px 18px 14px;flex:1;min-width:0;
+    display:flex;flex-direction:column;gap:10px;padding:18px 18px 16px;flex:1;min-width:0;
+    /* garante que o poster placeholder tenha pelo menos a altura do corpo */
+    min-height:160px;
 }}
-.sug-title{{
-    font-size:1rem;font-weight:700;color:#fff;line-height:1.35;
-}}
-.sug-badges{{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}}
+.sug-title{{font-size:1rem;font-weight:700;color:#fff;line-height:1.35;}}
+.sug-badges{{display:flex;flex-wrap:wrap;gap:5px;}}
 .sug-badges:empty{{display:none;}}
 .d-badge{{padding:3px 10px;border-radius:10px;font-size:.72em;font-weight:bold;}}
-.score-badge{{background:rgba(255,204,0,.15);color:#ffcc00;border:1px solid #ffcc00;}}
 .fav-badge{{background:rgba(229,9,20,.2);color:#e50914;border:1px solid #e50914;}}
 .rw-badge{{background:rgba(255,255,255,.1);color:#ccc;border:1px solid #555;}}
 .sug-meta{{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:#a1a1aa;}}
@@ -578,7 +577,7 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
     font-size:.74rem;color:#888;font-style:italic;
     border-left:2px solid #e50914;padding-left:8px;line-height:1.4;
 }}
-.detail-buttons{{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:2px;}}
+.detail-buttons{{display:flex;gap:8px;flex-wrap:wrap;}}
 .ext-btn{{
     display:inline-block;padding:6px 16px;border-radius:8px;font-size:.76rem;
     font-weight:bold;text-decoration:none;text-align:center;
@@ -588,17 +587,15 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
 .btn-mal{{background:#2e51a2;color:#fff;border:1px solid #3d65c4;}}
 .btn-crunchy{{background:#f47521;color:#fff;border:1px solid #ff8c3a;}}
 </style></head><body>
-<div class="sug-card">
+<div class="sug-card" id="card">
   <div class="sug-poster">
     {badge_fav}{badge_rw}
     <div class="badge-score">&#9733; {sug_score}</div>
     <img src="{img_url}" onerror="this.src='{PLACEHOLDER}'">
   </div>
-  <div class="sug-body">
+  <div class="sug-body" id="body">
     <div class="sug-title">{sug_nome}</div>
-    <div class="sug-badges">
-      {fav_badge}{rw_badge}
-    </div>
+    <div class="sug-badges">{fav_badge}{rw_badge}</div>
     <div class="sug-meta">
       <span><b>Estúdio:</b> {sug_studio}</span>
       <span><b>Gênero:</b> {sug_genero}</span>
@@ -611,14 +608,18 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
     {btns}
   </div>
 </div>
+<script>
+  function sendHeight() {{
+    var h = document.getElementById('card').offsetHeight;
+    window.parent.postMessage({{type: 'streamlit:setFrameHeight', height: h + 8}}, '*');
+  }}
+  // Dispara após o layout estar pronto (sem depender da imagem)
+  window.addEventListener('load', sendHeight);
+  setTimeout(sendHeight, 50);
+</script>
 </body></html>"""
 
-                # Altura precisa: padding (32) + título (48) + badges (28 se fav/rw) +
-                # meta 6 linhas (144) + comentário (44 se houver) + botões (44) + margem (16)
-                h = 32 + 48 + 144 + 44 + 16
-                if sug_is_fav or sug_rw > 0: h += 28
-                if sug_coment: h += 44
-                components.html(sug_html, height=h, scrolling=False)
+                components.html(sug_html, height=320, scrolling=False)
             else:
                 st.markdown(
                     "<div style='font-size:.82rem;color:#a1a1aa;padding:6px 0;'>"
