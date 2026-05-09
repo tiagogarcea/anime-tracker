@@ -537,7 +537,7 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
 .sug-card{{
     position:relative;background:#16161a;border-radius:14px;
     border:1px solid #e50914;box-shadow:0 0 24px rgba(229,9,20,0.18);
-    display:flex;flex-direction:row;overflow:hidden;width:100%;max-width:680px;
+    display:flex;flex-direction:row;overflow:hidden;width:100%;
 }}
 .sug-poster{{
     position:relative;flex-shrink:0;width:160px;
@@ -566,6 +566,7 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
     font-size:1rem;font-weight:700;color:#fff;line-height:1.35;
 }}
 .sug-badges{{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}}
+.sug-badges:empty{{display:none;}}
 .d-badge{{padding:3px 10px;border-radius:10px;font-size:.72em;font-weight:bold;}}
 .score-badge{{background:rgba(255,204,0,.15);color:#ffcc00;border:1px solid #ffcc00;}}
 .fav-badge{{background:rgba(229,9,20,.2);color:#e50914;border:1px solid #e50914;}}
@@ -595,7 +596,6 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
   <div class="sug-body">
     <div class="sug-title">{sug_nome}</div>
     <div class="sug-badges">
-      <span class="d-badge score-badge">&#9733; {sug_score}</span>
       {fav_badge}{rw_badge}
     </div>
     <div class="sug-meta">
