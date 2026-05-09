@@ -543,7 +543,7 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
     position:relative;flex-shrink:0;width:160px;
 }}
 .sug-poster img{{
-    width:160px;height:240px;object-fit:cover;display:block;
+    width:160px;height:100%;min-height:220px;object-fit:cover;display:block;
     border-radius:14px 0 0 14px;
 }}
 .badge-score{{
@@ -612,7 +612,9 @@ body{{background:#0a0a0c;font-family:sans-serif;padding:6px;}}
 </div>
 </body></html>"""
 
-                components.html(sug_html, height=268, scrolling=False)
+                # Altura dinâmica: base + extras por conteúdo adicional
+                extra_h = (28 if sug_is_fav or sug_rw > 0 else 0) + (36 if sug_coment else 0)
+                components.html(sug_html, height=270 + extra_h, scrolling=False)
             else:
                 st.markdown(
                     "<div style='font-size:.82rem;color:#a1a1aa;padding:6px 0;'>"
